@@ -9,4 +9,4 @@ def test_clear_imports():
     definition = get_fixture("imports.py")
 
     source_tree = ast.parse(definition)
-    assert unparse(_clear_imports(source_tree)) == "from re import sub\n"
+    assert unparse(_clear_imports(source_tree)) == "from conf import settings\nfrom re import sub\n"

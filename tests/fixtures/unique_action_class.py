@@ -1,6 +1,6 @@
 class UniqueActionView(APIView):
-    def post(self, arg):
-        ...
+    def post(self):
+        self.other_method("bla")
 
-    def other_method(self):
-        self.post("bla")
+    def other_method(self, arg):
+        ...
