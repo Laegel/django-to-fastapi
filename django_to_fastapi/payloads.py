@@ -112,7 +112,7 @@ class InputCollector(ast.NodeVisitor):
                                 )
                                 ast.fix_missing_locations(node.parent.parent)
 
-                        case "query_params":
+                        case "query_params" | "GET":
                             final = walk_until_parent_is_not(node.parent, ast.Attribute)
                             name, default = handle_final(final)
                             self.args[name] = (

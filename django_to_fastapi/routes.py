@@ -29,7 +29,7 @@ class RoutesCollector(ast.NodeVisitor):
         if node.targets[0].id == "urlpatterns":
             self.routes = [
                 Route(
-                    path=element.args[0].value,
+                    path="/" + element.args[0].value,
                     view=get_view(self.source, element.args[1]),
                 )
                 for element in node.value.elts

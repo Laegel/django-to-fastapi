@@ -31,22 +31,20 @@ def main(urls_path: str, destination_path: str):
         # fix_missing_annotations(source_code)
         migrated = process_code(source_code, routes)
         os.makedirs(os.path.dirname(destination_path + "/" + module), exist_ok=True)
-        with open(
-            destination_path + "/" + module + ".py", "w"
-        ) as cursor:
+        with open(destination_path + "/" + module + ".py", "w") as cursor:
             cursor.write(unparse(migrated))
 
     with open(destination_path + "/bootstrap.py", "w") as cursor:
         cursor.write(generate_bootstrap_module())
 
     with open(destination_path + "/main.py", "w") as cursor:
-        cursor.write(generate_entrypoint())
-
-    with open(destination_path + "/main.py", "w") as cursor:
-        cursor.write(generate_entrypoint())
+        cursor.write(generate_entrypoint(modules))
 
     os.makedirs(destination_path + "/conf", exist_ok=True)
-    shutil.copyfile(os.sep.join(urls_path.split(os.sep)[0:-1]) + "/settings.py", destination_path + "/conf/settings.py")
+    shutil.copyfile(
+        os.sep.join(urls_path.split(os.sep)[0:-1]) + "/settings.py",
+        destination_path + "/conf/settings.py",
+    )
     print(f"Finished with {Logger.warns_counter} warnings.")
 
 
