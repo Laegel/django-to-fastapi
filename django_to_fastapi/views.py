@@ -122,9 +122,11 @@ class RemoveArgs(ast.NodeVisitor):
         self.operations: ASTOperations = []
 
     def visit_FunctionDef(self, node):
-        inputs, maybe_payload_definition = get_payload_inputs(node)
+        inputs, maybe_payload_definition, maybe_output_definition = get_payload_inputs(
+            node
+        )
         args, defaults = handle_inputs(inputs)
-        new_node = ast.FunctionDef(
+        new_node = ast.AsyncFunctionDef(
             name=node.name,
             args=ast.arguments(
                 posonlyargs=[], args=args, defaults=defaults, kwonlyargs=[]
@@ -149,6 +151,17 @@ class RemoveArgs(ast.NodeVisitor):
                     options={
                         "target": node,
                         "candidate": maybe_payload_definition.unwrap(),
+                    },
+                )
+            )
+
+        if maybe_output_definition.is_some:
+            self.operations.append(
+                ASTOperation(
+                    action=ASTOperationAction.InsertBefore,
+                    options={
+                        "target": node,
+                        "candidate": maybe_output_definition.unwrap(),
                     },
                 )
             )
@@ -247,7 +260,11 @@ class ClassToFunctions(ast.NodeTransformer):
         )
 
         if is_route:
-            inputs, maybe_payload_definition = get_payload_inputs(node, self.route.view)
+            (
+                inputs,
+                maybe_payload_definition,
+                maybe_output_definition,
+            ) = get_payload_inputs(node, self.route.view)
             args, defaults = handle_inputs(inputs)
 
             if maybe_payload_definition.is_some:
@@ -261,8 +278,26 @@ class ClassToFunctions(ast.NodeTransformer):
                     )
                 )
 
-        new_node = ast.FunctionDef(
+            if maybe_output_definition.is_some:
+                self.operations.append(
+                    ASTOperation(
+                        action=ASTOperationAction.InsertBefore,
+                        options={
+                            "target": self.context,
+                            "candidate": maybe_output_definition.unwrap(),
+                        },
+                    )
+                )
+
+        new_node = ast.AsyncFunctionDef(
             name=self._get_route_function_name(node.name) if is_route else node.name,
+            returns=(
+                maybe_output_definition.unwrap().targets[0]
+                if maybe_output_definition.is_some
+                else None
+            )
+            if is_route
+            else node.returns,
             # args=ast.arguments(posonlyargs=[], args=[], defaults=[], kwonlyargs=[])
             # if is_route
             # else
@@ -276,7 +311,6 @@ class ClassToFunctions(ast.NodeTransformer):
             ),
             body=[self.visit(item) for item in node.body],
             decorator_list=decorator_list,
-            returns=node.returns,
         )
         self.functions.append(ast.copy_location(new_node, node))
         return node
@@ -308,7 +342,11 @@ class ClassToClass(ast.NodeVisitor):
         )
 
         if is_route:
-            inputs, maybe_payload_definition = get_payload_inputs(node, self.route.view)
+            (
+                inputs,
+                maybe_payload_definition,
+                maybe_output_definition,
+            ) = get_payload_inputs(node, self.route.view)
             args, defaults = handle_inputs(inputs)
 
             if maybe_payload_definition.is_some:
@@ -322,7 +360,18 @@ class ClassToClass(ast.NodeVisitor):
                     )
                 )
 
-        new_node = ast.FunctionDef(
+            if maybe_output_definition.is_some:
+                self.operations.append(
+                    ASTOperation(
+                        action=ASTOperationAction.InsertBefore,
+                        options={
+                            "target": self.context,
+                            "candidate": maybe_output_definition.unwrap(),
+                        },
+                    )
+                )
+
+        new_node = ast.AsyncFunctionDef(
             name=node.name,
             args=ast.arguments(
                 args=[ast.arg("self")] + args if is_route else node.args.args,

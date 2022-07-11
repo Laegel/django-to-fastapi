@@ -65,7 +65,7 @@ def test_get_function_route_method():
 def test_function_to_function():
     definition = get_fixture("route_function.py")
     expected = '''@router.post("/auth/signin")
-def signin():
+async def signin():
     """blockcomment"""
     ...
 '''
@@ -82,10 +82,10 @@ def signin():
 def test_class_to_functions():
     definition = get_fixture("unique_action_class.py")
     expected = """@router.post("/do-something")
-def post_unique_action():
+async def post_unique_action():
     other_method("bla")
 
-def other_method(arg):
+async def other_method(arg):
     ...
 """
 
@@ -105,19 +105,19 @@ def test_class_to_class():
     expected = """@cbv(router_posts)
 class PostsView:
     @router_posts.get("/")
-    def get(self):
+    async def get(self):
         ...
 
     @router_posts.post("/")
-    def post(self):
+    async def post(self):
         ...
 
     @router_posts.put("/")
-    def put(self):
+    async def put(self):
         ...
 
     @router_posts.delete("/")
-    def delete(self):
+    async def delete(self):
         ...
 """
     out = unparse(class_to_class(node, Route(view="PostsView", path="/posts"))[0])

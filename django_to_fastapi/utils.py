@@ -1,8 +1,10 @@
 import ast
 import logging
 from re import sub
+from typing import Callable, List, TypeVar
 
 from black import format_str, FileMode
+from option import NONE, Option, Some
 
 # from pytype import analyze, load_pytd, config
 # from pytype.pytd import visitors
@@ -89,3 +91,26 @@ def class_name_to_function(class_name: str):
 #         errorlog.print_to_stderr()
 
 #     unit
+
+
+T = TypeVar("T")
+
+
+def find(items: List[T], predicate: Callable[[T], bool]):
+    try:
+        return Some(next(item for item in items if predicate(item)))
+    except StopIteration:
+        return NONE
+
+
+def get_at(items: List[T], position: int) -> Option[T] | Option[None]:
+    try:
+        return Some(items[position])
+    except IndexError:
+        return NONE
+
+
+def get_arg_or_keyword(node: ast.Call, arg: str, position: int):
+    return find(node.keywords, lambda keyword: keyword.arg == arg) or get_at(
+        node.args, position
+    )

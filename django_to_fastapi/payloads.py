@@ -1,5 +1,6 @@
 import ast
-from typing import Dict, List, Tuple, Optional
+import json
+from typing import Dict, List, Literal, Tuple, Optional
 
 from option import NONE, Some, Option
 from django_to_fastapi.ast_operations import (
@@ -10,7 +11,7 @@ from django_to_fastapi.ast_operations import (
     find_field,
 )
 
-from django_to_fastapi.utils import to_pascal_case, unparse, Logger
+from django_to_fastapi.utils import get_arg_or_keyword, to_pascal_case, unparse, Logger
 
 
 def get_payload_inputs(node: ast.FunctionDef, context: Optional[str] = ""):
@@ -25,8 +26,11 @@ class InputCollector(ast.NodeVisitor):
         self.body_input: Option[Dict[str, ast.AST]] = NONE
         self.operations: ASTOperations = []
         self.otherops: List[Tuple[ast.AST, ASTOperation]] = []
+        self.out = []
 
     def visit_Name(self, node):
+        if node.id == "Response" and isinstance(node.parent, ast.Call):
+            return self._handle_response(node)
         if node.id != "request":
             return node
 
@@ -152,7 +156,7 @@ class InputCollector(ast.NodeVisitor):
                                     )
                                     ast.fix_missing_locations(final.parent)
                         case str:
-                            
+
                             self.args[node.parent.attr] = (
                                 Some(
                                     ast.Call(
@@ -164,7 +168,9 @@ class InputCollector(ast.NodeVisitor):
                                 Some(ast.Name(id="Any")),
                             )
                             Runner.replace(
-                                node.parent.parent, node.parent, ast.Name(id=node.parent.attr)
+                                node.parent.parent,
+                                node.parent,
+                                ast.Name(id=node.parent.attr),
                             )
                             ast.fix_missing_locations(node.parent.parent)
         except Exception as e:
@@ -182,6 +188,9 @@ class InputCollector(ast.NodeVisitor):
     def get_payload_input(self):
         return "PayloadInput" + self.context + to_pascal_case(self.root.name)
 
+    def get_payload_output(self):
+        return "PayloadOutput" + self.context + to_pascal_case(self.root.name)
+
     def collect(self, node: ast.FunctionDef):
         self.root = node
         for item in ast.walk(node):
@@ -194,22 +203,136 @@ class InputCollector(ast.NodeVisitor):
         for (root, operation) in self.otherops:
             Runner.execute(root, [operation])
 
-        return [(key, *value) for key, value in sorted(self.args.items(), key=lambda value: value[1][0].is_some)], Some(
-            self._define_payload_type()
-        ) if "data" in self.args else NONE
+        return (
+            [
+                (key, *value)
+                for key, value in sorted(
+                    self.args.items(), key=lambda value: value[1][0].is_some
+                )
+            ],
+            Some(self._define_payload_type()) if "data" in self.args else NONE,
+            Some(self._define_payload_output()) if self.out else NONE,
+        )
 
     def _define_payload_type(self):
         keys = [ast.Constant(value=key) for key in self.body_input.unwrap().keys()]
         values = [value for value in self.body_input.unwrap().values()]
 
+        payload_type_name = self.get_payload_input()
+
         return ast.Assign(
-            targets=[ast.Name(id=self.get_payload_input())],
+            targets=[ast.Name(id=payload_type_name)],
             value=ast.Call(
                 func=ast.Name(id="TypedDict"),
                 args=[
-                    ast.Constant(value=self.get_payload_input()),
+                    ast.Constant(value=payload_type_name),
                     ast.Dict(keys=keys, values=values),
                 ],
                 keywords=[],
             ),
         )
+
+    def _define_payload_output(self):
+        def get_type(item, context=""):
+            match item:
+                case ast.Name():
+                    # return type(item.id).__name__
+                    return ast.Name(id=type(item.id).__name__), type(item.id).__name__
+                case ast.Constant():
+                    # return type(item.value).__name__
+                    return (
+                        ast.Name(id=type(item.value).__name__),
+                        type(item.value).__name__,
+                    )
+                case ast.Dict():
+                    # return "dict"
+                    values, identifiers = list(
+                        zip(*[get_type(value) for value in item.values])
+                    )
+                    return ast.Call(
+                        args=[
+                            ast.Constant(value=context),
+                            ast.Dict(keys=item.keys, values=values),
+                        ],
+                        func=ast.Name(id="TypedDict"),
+                        keywords=[],
+                    ), "dict:" + ",".join(identifiers)
+                case ast.JoinedStr():
+                    # return "str"
+                    return ast.Name(id="str"), "str"
+                case ast.Attribute():
+                    # return "str"
+                    return ast.Name(id="str"), "str"
+                case ast.ListComp() | ast.List():
+                    # return "list"
+                    return ast.Name(id="list"), "list"
+                case _:
+                    # return "Any"
+                    return ast.Name(id="Any"), "Any"
+
+        types = []
+        types_indexer = set()
+
+        for item in self.out:
+            temp_type, identifier = get_type(item, self.get_payload_output())
+            if identifier not in types_indexer:
+                types.append(temp_type)
+                types_indexer.add(identifier)
+
+        if len(types) > 1:
+            value = ast.Subscript(
+                slice=ast.Tuple(elts=[item for item in types]),
+                value=ast.Name(id="Union"),
+            )
+        else:
+            value = types[0]
+
+        return ast.Assign(targets=[ast.Name(id=self.get_payload_output())], value=value)
+
+    def _handle_response(self, node: ast.Name):
+
+        payload = get_arg_or_keyword(node.parent, "data", 0)
+
+        status = get_arg_or_keyword(node.parent, "status", 1)
+
+        def getnewwcall(status_code: int, payload):
+            return ast.Call(
+                func=ast.Name("JSONResponse"),
+                args=[payload.unwrap()] if payload.is_some else [],
+                keywords=[
+                    ast.keyword(
+                        arg="status_code", value=ast.Constant(value=status_code)
+                    )
+                ],
+            )
+
+        def handle_target(status_code, payload):
+            if payload.is_some:
+                self.out.append(payload.unwrap())
+            return (
+                getnewwcall(status_code, payload)
+                if status_code != 200 or status_code == 200 and payload.is_none
+                else payload.unwrap()
+            )
+
+        if status.is_some:
+            status_node = status.unwrap()
+            status_value = (
+                status_node.value
+                if isinstance(status_node, ast.keyword)
+                else status_node
+            )
+            match status_value:
+                case ast.Attribute():
+                    if status_value.attr.startswith("HTTP_"):
+                        status_code = int(status_value.attr.split("_")[1])
+                        target = handle_target(status_code, payload)
+                case ast.Constant(value=status_code):
+                    target = handle_target(status_code, payload)
+                case _:
+                    ...
+        else:
+            target = payload.unwrap()
+        Runner.replace(node.parent.parent, node.parent, target)
+        ast.fix_missing_locations(node.parent.parent)
+        return node

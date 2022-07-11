@@ -69,42 +69,60 @@ class FastAPIUtilsImports(Enum):
     Router = 2
     Types = 3
     CommonImports = 4
+    Responses = 5
+
+    Auth = 10
 
 
 def _resolve_import(import_kind: FastAPIUtilsImports):
     return {
         FastAPIUtilsImports.ClassBasedView: ast.ImportFrom(
             level=0,
-            module="fastapi_utils.cbv",
+            module="fastapi_restful.cbv",
             names=[ast.alias(name="cbv", asname=None)],
         ),
         FastAPIUtilsImports.InferringRouter: ast.ImportFrom(
             level=0,
-            module="fastapi_utils.inferring_router",
+            module="fastapi_restful.inferring_router",
             names=[ast.alias(name="InferringRouter", asname=None)],
         ),
         FastAPIUtilsImports.Router: ast.ImportFrom(
             level=0,
-            module="fastapi_utils.router",
+            module="fastapi_restful.router",
             names=[ast.alias(name="Router", asname=None)],
         ),
         FastAPIUtilsImports.Types: ast.ImportFrom(
             level=0,
             module="typing",
             names=[
-                ast.alias(name="TypedDict", asname=None),
                 ast.alias(name="Any", asname=None),
+                ast.alias(name="TypedDict", asname=None),
+                ast.alias(name="Union", asname=None),
             ],
         ),
         FastAPIUtilsImports.CommonImports: ast.ImportFrom(
             level=0,
             module="fastapi",
             names=[
-                ast.alias(name="Response", asname=None),
                 ast.alias(name="Request", asname=None),
                 ast.alias(name="Depends", asname=None),
             ],
         ),
+        FastAPIUtilsImports.Responses: ast.ImportFrom(
+            level=0,
+            module="fastapi.responses",
+            names=[
+                ast.alias(name="JSONResponse", asname=None),
+            ],
+        ),
+        FastAPIUtilsImports.Auth: ast.ImportFrom(
+            level=0,
+            module="auth.inject",
+            names=[
+                ast.alias(name="get_user", asname=None),
+            ],
+        ),
+
     }[import_kind]
 
 
@@ -161,6 +179,12 @@ class Migrator(ast.NodeVisitor):
                                 additional_imports.add(
                                     FastAPIUtilsImports.CommonImports
                                 )
+                                additional_imports.add(
+                                    FastAPIUtilsImports.Responses
+                                )
+                                additional_imports.add(FastAPIUtilsImports.Auth)
+                                
+                            self.operations += operations
 
                             self.operations += [
                                 ASTOperation(
@@ -173,7 +197,6 @@ class Migrator(ast.NodeVisitor):
                                 for function_def in functions
                             ]
 
-                            self.operations += operations
 
                             self.operations.append(
                                 ASTOperation(
@@ -194,7 +217,7 @@ class Migrator(ast.NodeVisitor):
                                 value=ast.Call(
                                     func=ast.Name(id="InferringRouter"),
                                     args=[],
-                                    keywords=[],
+                                    keywords=[ast.keyword(arg="prefix", value=ast.Constant(kind=None, value=matching_route.path))],
                                 ),
                             )
                             routers.append(sub_router_name)
@@ -224,13 +247,21 @@ class Migrator(ast.NodeVisitor):
                             additional_imports.add(FastAPIUtilsImports.InferringRouter)
                             additional_imports.add(FastAPIUtilsImports.Types)
                             additional_imports.add(FastAPIUtilsImports.CommonImports)
+                            additional_imports.add(
+                                FastAPIUtilsImports.Responses
+                            )
+                            additional_imports.add(FastAPIUtilsImports.Auth)
 
                 case ast.FunctionDef():
+                    additional_imports.add(FastAPIUtilsImports.Auth)
                     if "router" not in routers:
                         add_main_router(item)
                         additional_imports.add(FastAPIUtilsImports.InferringRouter)
                         additional_imports.add(FastAPIUtilsImports.Types)
                         additional_imports.add(FastAPIUtilsImports.CommonImports)
+                        additional_imports.add(
+                            FastAPIUtilsImports.Responses
+                        )
                     out, operations = self._handle_function(item, matching_route)
                     self.operations += operations
                     self.operations += [
@@ -314,11 +345,16 @@ app = create_app()
 """
     )
 
+def normalize(module):
+    return "routers_" + "_".join(module.split("/")[-2:])
 
-def generate_entrypoint():
-
+def generate_entrypoint(modules: Sequence[str]):
+    imports = "\n".join([f"""from {module.replace("/", ".")} import routers as {normalize(module)}""" for module in modules])
+    list_comprehension = ",\n".join([normalize(module) for module in modules])
+    all_routers = f"""all_routers = itertools.chain.from_iterable([{list_comprehension}])"""
     return format_string(
         f"""import os
+import itertools
 import glob
 import importlib.util
 
@@ -326,17 +362,24 @@ import uvicorn
 
 from bootstrap import app, CONTEXT
 
-root = os.path.dirname(__file__)
+{imports}
 
-files = [f for f in glob.glob(root + "**/*.py", recursive=True)]
+{all_routers}
 
-for module_name in files:
-    name = module_name.split("/")[0]
-    spec = importlib.util.spec_from_file_location(name, module_name)
-    module = importlib.util.module_from_spec(spec)
-    routers = getattr(module, "routers", [])
-    for router in routers:
-        app.include_router(router)
+#root = os.path.dirname(__file__)
+#
+#files = [f for f in glob.glob(root + "**/*.py", recursive=True)]
+#
+#for module_name in files:
+#    name = module_name.split("/")[0]
+#    spec = importlib.util.spec_from_file_location(name, module_name)
+#    module = importlib.util.module_from_spec(spec)
+#    routers = getattr(module, "routers", [])
+#    for router in routers:
+#        app.include_router(router)
+
+for router in all_routers:
+    app.include_router(router)
 
 if __name__ == "__main__":
     uvicorn.run(

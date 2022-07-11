@@ -49,7 +49,7 @@ def test_get_payload_inputs(definition: str, expected):
     {definition}
     """
 
-    inputs, _ = get_payload_inputs(get_first_node(definition))
+    inputs, _, _ = get_payload_inputs(get_first_node(definition))
 
     if not inputs:
         assert inputs == expected
@@ -67,5 +67,15 @@ def test_get_payload_inputs(definition: str, expected):
             assert annotation.unwrap().id == expected[index][2].unwrap().id
 
 
-def test_transform_payload_output():
-    ...
+def test_get_payload_outputs():
+    definition = f"""def my_view():
+    return Response("bla", status=status.HTTP_200_OK)
+    """
+
+    module = ast.parse(definition)
+
+    node = module.body[0]
+    _, _, payload_output = get_payload_inputs(node)
+
+    assert payload_output.unwrap().targets[0].id == "PayloadOutputMyView"
+    assert payload_output.unwrap().value.id == "str"

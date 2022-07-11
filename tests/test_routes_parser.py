@@ -14,27 +14,27 @@ urlpatterns = [
     """
     expected_routes = [
         {
-            "path": "posts/create",
+            "path": "/posts/create",
             "view": "CreatePostsView",
         },
         {
-            "path": "posts/unpublish",
+            "path": "/posts/unpublish",
             "view": "UnpublishPostsView",
         },
         {
-            "path": "posts/delete",
+            "path": "/posts/delete",
             "view": "DeletePostsView",
         },
         {
-            "path": "posts",
+            "path": "/posts",
             "view": "PostsView",
         },
         {
-            "path": "last",
+            "path": "/last",
             "view": "LastView",
         },
         {
-            "path": "auth/signin",
+            "path": "/auth/signin",
             "view": "signin",
         },
     ]
