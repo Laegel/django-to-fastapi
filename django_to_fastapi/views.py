@@ -109,10 +109,8 @@ def handle_inputs(inputs):
         )
         for (value, _, annotation) in inputs
     ]
-    # def update_lineno(value: ast.AST, default):
-    #     default.l
 
-    defaults = [default.unwrap() for (value, default, _) in inputs if default.is_some]
+    defaults = [default.unwrap() for (_, default, _) in inputs if default.is_some]
     return args, defaults
 
 

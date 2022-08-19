@@ -278,6 +278,9 @@ class InputCollector(ast.NodeVisitor):
             if identifier not in types_indexer:
                 types.append(temp_type)
                 types_indexer.add(identifier)
+            if identifier.startswith("dict"):
+                types = [temp_type]
+                break
 
         if len(types) > 1:
             value = ast.Subscript(
@@ -295,22 +298,22 @@ class InputCollector(ast.NodeVisitor):
 
         status = get_arg_or_keyword(node.parent, "status", 1)
 
-        def getnewwcall(status_code: int, payload):
+        def getnewwcall(status_node: ast.AST, payload):
             return ast.Call(
                 func=ast.Name("JSONResponse"),
-                args=[payload.unwrap()] if payload.is_some else [],
+                args=[payload.unwrap()] if payload.is_some else [ast.Constant(value="")],
                 keywords=[
                     ast.keyword(
-                        arg="status_code", value=ast.Constant(value=status_code)
+                        arg="status_code", value=status_node
                     )
                 ],
             )
 
-        def handle_target(status_code, payload):
+        def handle_target(status_code, status_value, payload):
             if payload.is_some:
                 self.out.append(payload.unwrap())
             return (
-                getnewwcall(status_code, payload)
+                getnewwcall(status_value, payload)
                 if status_code != 200 or status_code == 200 and payload.is_none
                 else payload.unwrap()
             )
@@ -326,9 +329,9 @@ class InputCollector(ast.NodeVisitor):
                 case ast.Attribute():
                     if status_value.attr.startswith("HTTP_"):
                         status_code = int(status_value.attr.split("_")[1])
-                        target = handle_target(status_code, payload)
+                        target = handle_target(status_code, status_value, payload)
                 case ast.Constant(value=status_code):
-                    target = handle_target(status_code, payload)
+                    target = handle_target(status_code, status_value, payload)
                 case _:
                     ...
         else:

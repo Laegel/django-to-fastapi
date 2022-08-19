@@ -98,6 +98,7 @@ def _resolve_import(import_kind: FastAPIUtilsImports):
                 ast.alias(name="Any", asname=None),
                 ast.alias(name="TypedDict", asname=None),
                 ast.alias(name="Union", asname=None),
+                ast.alias(name="Optional", asname=None),
             ],
         ),
         FastAPIUtilsImports.CommonImports: ast.ImportFrom(
@@ -106,6 +107,7 @@ def _resolve_import(import_kind: FastAPIUtilsImports):
             names=[
                 ast.alias(name="Request", asname=None),
                 ast.alias(name="Depends", asname=None),
+                ast.alias(name="status", asname=None),
             ],
         ),
         FastAPIUtilsImports.Responses: ast.ImportFrom(
@@ -113,13 +115,6 @@ def _resolve_import(import_kind: FastAPIUtilsImports):
             module="fastapi.responses",
             names=[
                 ast.alias(name="JSONResponse", asname=None),
-            ],
-        ),
-        FastAPIUtilsImports.Auth: ast.ImportFrom(
-            level=0,
-            module="auth.inject",
-            names=[
-                ast.alias(name="get_user", asname=None),
             ],
         ),
 
